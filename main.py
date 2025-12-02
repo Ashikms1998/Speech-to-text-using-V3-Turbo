@@ -1,10 +1,23 @@
 import os
+from dotenv import load_dotenv
 import torch
 import sounddevice as sd
 import numpy as numpy
 import win32com.client
 import scipy.io.wavfile as wav
 from transformers import pipeline
+import google.generativeai as genai
+
+# Configure the GEMINI API key
+load_dotenv() 
+GOOGLE_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
+
+# Check if key loaded correctly
+if not GOOGLE_API_KEY:
+    print("❌ ERROR: API Key not found. Please create a .env file or paste the key directly.")
+
+genai.configure(api_key = GOOGLE_API_KEY)
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 # Define the folder where you pasted ffmpeg.exe
 # We use r"" to make sure Windows backslashes don't cause errors
@@ -35,7 +48,6 @@ temp_file = "temp.wav"
 
 def speak(text):
     """Tells the computer to speak the text aloud using Windows SAPI"""
-    print(f"🤖 AI:{text}")
     try:
         speaker.Speak(text)
     except Exception as e:
@@ -77,21 +89,20 @@ try:
         # This is where you would normally send 'user_text' to Gemini/OpenAI.
         # For now, we use simple Python logic:
 
-        if "Hello" in user_text or "hi" in user_text:
-            speak("Hello! How can I help you today?")
-        elif "What is your name" in user_text:
-            speak("I am Whisper, your Python assistant.")
-        elif "time" in user_text:
-            from datetime import datetime
-
-            current_time = datetime.now().strftime("%I:%M %p")
-            speak(f"The current time is {current_time}")
-        elif "Stop" in user_text:
+        if "stop" in user_text.lower() or "exit" in user_text.lower():
             speak("Goodbye! Have a great day!")
-            break  # Exit the loop
-        else:
-            speak("I heard you, but I don't know how to answer that yet")
+            break
 
+        try:
+            #Ask Gemini for response
+
+            response = model.generate_content(user_text + "(Answer in 1 short sentence)")
+            ai_reply = response.text
+            print(f"🤖 AI: {ai_reply}")
+            speak(ai_reply)
+        except Exception as e:
+            print(f"Gemini error: {e}")
+            speak("I'm sorry, I didn't understand that. Please try again.")    
 
 except KeyboardInterrupt:
     print("\nTranscription stopped by user.")
