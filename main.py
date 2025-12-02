@@ -1,27 +1,16 @@
 import os
 from dotenv import load_dotenv
-import torch
 import sounddevice as sd
 import numpy as numpy
 import win32com.client
+from groq import Groq
 import soundfile as sf
-import scipy.io.wavfile as wav
-from transformers import pipeline
-import google.generativeai as genai
 import time
 
 # Configure the GEMINI API key
 load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 
-# Check if key loaded correctly
-if not GOOGLE_API_KEY:
-    print(
-        "❌ ERROR: API Key not found. Please create a .env file or paste the key directly."
-    )
-
-genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Define the folder where you pasted ffmpeg.exe
 # We use r"" to make sure Windows backslashes don't cause errors
@@ -32,23 +21,14 @@ os.environ["PATH"] += os.pathsep + ffmpeg_folder
 # Setup TTS Engine using Windows SAPI (more reliable than pyttsx3)
 speaker = win32com.client.Dispatch("SAPI.SpVoice")
 speaker.Rate = 1  # Speed: -10 to 10, default is 0
-device = "cuda" if torch.cuda.is_available() else "cpu"
-dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-print(f"Loading Whisper Turbo on {device} and torch_dtype {dtype}")
-pipe = pipeline(
-    "automatic-speech-recognition",
-    model="openai/whisper-large-v3-turbo",
-    device=device,
-    dtype=dtype,
-)
 
 # CONFIG FOR RECORDING
 
 sample_rate = 16000
-threshold = 600
-silence_limit = 2  # seconds
-temp_file = "temp.wav"
+threshold = 500
+silence_limit = 1  # seconds
+temp_file = "groq_temp.wav"
 
 
 def speak(text):
@@ -79,12 +59,12 @@ def smart_record_audio():
                     started_speaking = True
 
                 # Add audio to buffer
-                audio_buffer.extend(chunk)
+                audio_buffer.append(chunk)
                 silence_start = None  # Reset silence start
 
             elif started_speaking:
 
-                audio_buffer.extend(chunk)
+                audio_buffer.append(chunk)
 
                 if silence_start is None:
                     silence_start = time.time()
@@ -99,24 +79,30 @@ def smart_record_audio():
                 pass  # We haven't started speaking yet, just ignore the noise
 
     # Save the audio to a temporary file
-    audio_numpy = numpy.array(audio_buffer, dtype="int16")
+    audio_numpy = numpy.concatenate(audio_buffer)
     sf.write(temp_file, audio_numpy, sample_rate)
     return True
 
 
 # MAIN LOOP
 
-speak("Smart Listening Mode Online.")
+speak("Groq Listening Mode Online.")
 
 try:
     while True:
         # This function now BLOCKS until you finish a sentence
         smart_record_audio()
 
-        # Transcribe audio we trimmed silence hallucinations  should be gone.
+        # STEP A: Groq Whisper (The Ear)
+        # We send the file to Groq's cloud. It comes back almost instantly
 
-        result = pipe(temp_file)
-        user_text = result["text"]
+        with open(temp_file, "rb") as file:
+            transcription = client.audio.transcriptions.create(
+                file=(temp_file, file.read()),
+                model="whisper-large-v3",
+            )
+
+        user_text = transcription.text
 
         if user_text.strip() != "":
             print(f"You: {user_text}")
@@ -129,18 +115,19 @@ try:
                 speak("Goodbye! Have a great day!")
                 break
 
-            try:
-                # Ask Gemini for response
+            # Groq LLM (The Brain)
+            # Using Llama3-8b because it is super fast on Groq
 
-                response = model.generate_content(
-                    user_text + "(Answer in 1 short sentence)"
-                )
-                ai_reply = response.text
-                print(f"🤖 AI: {ai_reply}")
-                speak(ai_reply)
-            except Exception as e:
-                print(f"Gemini error: {e}")
-                speak("I'm sorry, I didn't understand that. Please try again.")
+            completion = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "Reply in one short sentence."},
+                    {"role": "user", "content": user_text},
+                ],
+            )
+            ai_reply = completion.choices[0].message.content
+            print(f"🤖 AI: {ai_reply}")
+            speak(ai_reply)
 
 except KeyboardInterrupt:
     print("\nTranscription stopped by user.")
