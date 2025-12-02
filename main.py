@@ -15,24 +15,12 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
 print(f"Loading Whisper Turbo on {device} and torch_dtype {dtype}")
-
 pipe = pipeline(
     "automatic-speech-recognition",
     model = "openai/whisper-large-v3-turbo",
     device = device,
     dtype  = dtype
 )
-
-#sample_audio_url = "https://www.ool.co.uk/wp-content/uploads/Spanish-A-Track-8.mp3"
-#print("Listening to audio...")
-
-
-# result = pipe(sample_audio_url,chunk_length_s = 30)
-
-# print("\n--- Transcription ---\n")
-# print(result["text"])
-# print("\n---------------------\n")
-
 
 #CONFIG FOR RECORDING
 
@@ -50,21 +38,35 @@ def record_audio(duration):
 
 #THE INFINITE LOOP
 
-print("Starting Live Transcription... (Press Ctrl+C to stop)")
-
+print("Starting Live Assistant...(Press Ctrl+C to stop)")
 
 try:
     while True:
-        #Record audio
+        #Record Audio
         record_audio(duration)
 
-        #Transcribe audio generate_kwargs={"language": "english"} helps it decide faster if you only speak English
+        #Transcribe Audio
         result = pipe(temp_file)
+        user_text = result["text"]
 
-        #Print Result
-        text = result["text"]
-        if text.strip() !="":
-            print(f"You Said: {text}")
+        if user_text.strip() !="":
+            print(f"You Said: {user_text}")
+
+
+#The Logic for AI model
+# This is where you would normally send 'user_text' to Gemini/OpenAI.
+# For now, we use simple Python logic:
+
+        if "Hello" in user_text or "hi" in user_text:
+            print("🤖 AI:Hello! How can I help you today?")
+        elif "What is your name" in user_text:
+            print("🤖 AI: I am Whisper, your AI assistant.")
+        elif "Stop" in user_text:
+            print("🤖 AI: Goodbye! Have a great day!")
+            break # Exit the loop
+        else:
+            print("🤖 AI: I heard you, but I don't know how to answer that yet")
+
 
 except KeyboardInterrupt:
     print("\nTranscription stopped by user.")
