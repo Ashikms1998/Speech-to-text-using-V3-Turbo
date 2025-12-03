@@ -1,6 +1,9 @@
 import os
 from dotenv import load_dotenv
 import sounddevice as sd
+import asyncio
+import edge_tts
+import pygame
 import numpy as numpy
 import win32com.client
 from groq import Groq
@@ -23,6 +26,38 @@ speaker = win32com.client.Dispatch("SAPI.SpVoice")
 speaker.Rate = 1  # Speed: -10 to 10, default is 0
 
 
+
+# TTS SETTINGS
+
+voice = "en-GB-SoniaNeural"
+TTS_OUTPUT_FILE = "response.mp3"
+
+async def generate_voice(text):
+    """Helper to save audio asynchronously"""
+    communicate = edge_tts.Communicate(text,voice)
+    await communicate.save(TTS_OUTPUT_FILE)
+
+def speak(text):
+    """Generates and plays human-like audio"""
+
+    try:
+        asyncio.run(generate_voice(text))
+
+        pygame.mixer.init()
+        pygame.mixer.music.load(TTS_OUTPUT_FILE)
+        pygame.mixer.music.play()
+
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
+
+        pygame.mixer.quit()
+
+        if os.path.exists(TTS_OUTPUT_FILE):
+            os.remove(TTS_OUTPUT_FILE)
+
+    except Exception as e:
+        print(f"TTS Error:{e}")
+
 # CONFIG FOR RECORDING
 
 sample_rate = 16000
@@ -30,13 +65,6 @@ threshold = 500
 silence_limit = 1  # seconds
 temp_file = "groq_temp.wav"
 
-
-def speak(text):
-    """Tells the computer to speak the text aloud using Windows SAPI"""
-    try:
-        speaker.Speak(text)
-    except Exception as e:
-        pass
 
 
 def smart_record_audio():
